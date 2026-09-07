@@ -1,5 +1,6 @@
 package com.kurskievtr.siderouteng
 
+import java.net.InetAddress
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -96,16 +97,35 @@ object XrayConfig {
         return Result(config.toString(2), proxies.size)
     }
 
-    /** Configuration for a one-off upstream latency probe: outbounds only, no tunnel. */
+    /**
+     * Configuration for a one-off upstream latency probe: one outbound, no tunnel and no DNS.
+     *
+     * Server addresses are resolved here, by the platform resolver, because a bare core has no
+     * resolver of its own on Android and would never reach a server given by domain.
+     */
     fun buildProbe(prefs: TunnelPrefs): String? {
-        val proxies = outbounds(prefs, links(prefs))
-        if (proxies.isEmpty()) return null
-        val outbounds = JSONArray()
-        proxies.forEach { outbounds.put(it) }
+        val proxy = outbounds(prefs, links(prefs)).firstOrNull() ?: return null
+        resolveServers(proxy)
         return JSONObject()
             .put("log", JSONObject().put("loglevel", prefs.logLevel))
-            .put("outbounds", outbounds)
+            .put("outbounds", JSONArray().put(proxy))
             .toString(2)
+    }
+
+    private fun resolveServers(outbound: JSONObject) {
+        val settings = outbound.optJSONObject("settings") ?: return
+        val servers = settings.optJSONArray("vnext") ?: settings.optJSONArray("servers") ?: return
+        for (i in 0 until servers.length()) {
+            val server = servers.optJSONObject(i) ?: continue
+            val address = server.optString("address")
+            if (address.isEmpty()) continue
+            val resolved = runCatching { InetAddress.getByName(address).hostAddress }.getOrNull()
+            if (resolved == null) {
+                AppLog.w("cannot resolve the upstream server address")
+            } else {
+                server.put("address", resolved)
+            }
+        }
     }
 
     private fun links(prefs: TunnelPrefs): List<String> = prefs.outboundLinks
