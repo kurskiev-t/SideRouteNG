@@ -62,6 +62,14 @@
                 android:text="@string/find_proxies" />
 
             <com.google.android.material.button.MaterialButton
+                android:id="@+id/find_links"
+                style="?attr/materialButtonOutlinedStyle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp"
+                android:text="@string/find_links" />
+
+            <com.google.android.material.button.MaterialButton
                 android:id="@+id/test_upstream"
                 style="?attr/materialButtonOutlinedStyle"
                 android:layout_width="match_parent"

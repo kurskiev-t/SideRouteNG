@@ -68,7 +68,11 @@ class MainActivity : AppCompatActivity() {
         }
         binding.findProxies.setOnClickListener {
             savePrefs()
-            startActivity(Intent(this, ProxyFinderActivity::class.java))
+            startActivity(ProxyFinderActivity.intent(this, links = false))
+        }
+        binding.findLinks.setOnClickListener {
+            savePrefs()
+            startActivity(ProxyFinderActivity.intent(this, links = true))
         }
         binding.save.setOnClickListener {
             savePrefs()
@@ -173,6 +177,7 @@ class MainActivity : AppCompatActivity() {
         binding.global.isEnabled = editable
         binding.apps.isEnabled = editable && !binding.global.isChecked
         binding.findProxies.isEnabled = editable
+        binding.findLinks.isEnabled = editable
         binding.testUpstream.isEnabled = editable
         binding.save.isEnabled = editable
         binding.control.setText(

@@ -19,6 +19,9 @@ are filled in.
 - "Test upstream": a one-off `measureOutboundDelay` probe with the server address pre-resolved.
 - SOCKS5 finder: downloads public lists, checks every candidate against a real YouTube request,
   shows a table with latency and checkboxes, writes the selection into the pool field.
+- VLESS finder: the same screen, fed by public aggregators; every candidate is dialled through a
+  throwaway core and has to answer the check URL, so servers that only accept TCP are dropped.
+  The selection goes into the server links field, never into the SOCKS5 pool.
 - Explicit stop reasons in the log and an idempotent service shutdown.
 
 ### Verified on the device
@@ -29,18 +32,15 @@ are filled in.
 
 ## Planned
 
-### 1. Finder for free Xray links (next)
+### 1. Finder UI gaps (next)
 
-Same UI as the SOCKS5 finder, separate entry point, result goes into the server links field.
-
-- Sources: public aggregators that republish free vless/vmess/trojan configs, plain or base64
-  (Epodonios/v2ray-configs, MhdiTaheri/V2rayCollector, mahdibland/V2RayAggregator).
-- Parsing: decode base64 when needed, keep the protocols the app can build, deduplicate by
-  address plus credentials, prefer Reality on 443.
-- Checking: `measureOutboundDelay` per candidate with a small thread pool, because a link cannot
-  be checked with a plain socket — the handshake is the thing that fails.
-- Because the lists hold thousands of entries and roughly a third answer, the run is capped at a
-  configurable number of candidates and stops early once enough live ones are found.
+- The latency limit is only applied while results arrive; changing it afterwards leaves the
+  ticks as they were. It should re-tick, or filter, the rows already on screen.
+- "Select all" and "Clear" are buttons; the usual Android pattern is one tri-state checkbox in
+  the header that ticks and unticks everything and reflects the current selection.
+- Show why a candidate failed (parse, handshake, timeout, bad answer) instead of hiding it, so a
+  run that finds nothing can be diagnosed.
+- The check proves TCP over the upstream. UDP/QUIC relaying is not verified separately yet.
 
 ### 2. Self-maintaining pool
 

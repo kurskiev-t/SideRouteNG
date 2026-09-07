@@ -1,5 +1,7 @@
 package com.kurskievtr.siderouteng
 
+import android.content.Context
+import android.content.Intent
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.ViewGroup
@@ -14,19 +16,25 @@ import com.kurskievtr.siderouteng.databinding.ActivityProxyFinderBinding
 import com.kurskievtr.siderouteng.databinding.ItemProxyBinding
 
 /**
- * Searches public SOCKS5 lists, shows what survived the check sorted by latency and writes the
- * ticked rows into the proxy pool. Rows faster than the latency limit are ticked automatically.
+ * Searches public lists, shows what survived the check sorted by latency and writes the ticked
+ * rows into the settings. Rows faster than the latency limit are ticked automatically.
+ *
+ * The same screen serves both kinds of upstream: SOCKS5 endpoints go into the pool, Xray links
+ * into the server links, and the two lists are never mixed.
  */
-class ProxyFinderActivity : AppCompatActivity(), ProxyFinder.Listener {
+class ProxyFinderActivity : AppCompatActivity(), Finder.Listener {
     private lateinit var binding: ActivityProxyFinderBinding
     private lateinit var prefs: TunnelPrefs
     private lateinit var adapter: ProxyAdapter
-    private val finder = ProxyFinder(this)
+    private lateinit var finder: Finder
+    private var links = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         prefs = TunnelPrefs(this)
+        links = intent.getBooleanExtra(EXTRA_LINKS, false)
+        finder = if (links) LinkFinder(this, this) else ProxyFinder(this)
         binding = ActivityProxyFinderBinding.inflate(layoutInflater)
         setContentView(binding.root)
         ViewCompat.setOnApplyWindowInsetsListener(binding.root) { v, insets ->
@@ -34,7 +42,9 @@ class ProxyFinderActivity : AppCompatActivity(), ProxyFinder.Listener {
             v.setPadding(bars.left, bars.top, bars.right, bars.bottom)
             insets
         }
+        binding.toolbar.setTitle(if (links) R.string.find_links else R.string.find_proxies)
         binding.toolbar.setNavigationOnClickListener { finish() }
+        binding.add.setText(if (links) R.string.add_to_links else R.string.add_to_pool)
 
         adapter = ProxyAdapter()
         binding.list.layoutManager = LinearLayoutManager(this)
@@ -45,7 +55,7 @@ class ProxyFinderActivity : AppCompatActivity(), ProxyFinder.Listener {
         binding.search.setOnClickListener { toggleSearch() }
         binding.selectAll.setOnClickListener { adapter.setAllChecked(true) }
         binding.clear.setOnClickListener { adapter.setAllChecked(false) }
-        binding.add.setOnClickListener { addToPool() }
+        binding.add.setOnClickListener { addChosen() }
         showProgress(0, 0, 0)
     }
 
@@ -72,16 +82,23 @@ class ProxyFinderActivity : AppCompatActivity(), ProxyFinder.Listener {
         finder.start()
     }
 
-    private fun addToPool() {
-        val chosen = adapter.checkedEndpoints()
+    private fun addChosen() {
+        val chosen = adapter.checkedValues()
         if (chosen.isEmpty()) {
             Toast.makeText(this, R.string.nothing_selected, Toast.LENGTH_SHORT).show()
             return
         }
-        val existing = ProxyEndpoint.parseList(prefs.proxyList)
+        val existing = (if (links) prefs.outboundLinks else prefs.proxyList)
+            .split('\n')
+            .map(String::trim)
+            .filter { it.isNotEmpty() }
         val merged = (existing + chosen).distinct()
-        prefs.proxyList = merged.joinToString("\n") { "${it.host}:${it.port}" }
-        AppLog.i("proxy pool now has ${merged.size} endpoints")
+        if (links) prefs.outboundLinks = merged.joinToString("\n")
+        else prefs.proxyList = merged.joinToString("\n")
+        AppLog.i(
+            if (links) "server links now hold ${merged.size} entries"
+            else "proxy pool now has ${merged.size} endpoints"
+        )
         Toast.makeText(
             this,
             getString(R.string.added_to_pool, chosen.size, merged.size),
@@ -94,9 +111,8 @@ class ProxyFinderActivity : AppCompatActivity(), ProxyFinder.Listener {
         showProgress(checked, total, live)
     }
 
-    override fun onFound(result: ProxyProbeResult) {
-        val autoSelect = binding.autoSelect.isChecked &&
-            result.latencyMs <= prefs.maxLatencyMs
+    override fun onFound(result: FinderResult) {
+        val autoSelect = binding.autoSelect.isChecked && result.latencyMs <= prefs.maxLatencyMs
         adapter.add(result, autoSelect)
     }
 
@@ -109,16 +125,24 @@ class ProxyFinderActivity : AppCompatActivity(), ProxyFinder.Listener {
     private fun showProgress(checked: Int, total: Int, live: Int) {
         binding.progress.text = getString(R.string.find_progress, checked, total, live)
     }
+
+    companion object {
+        private const val EXTRA_LINKS = "links"
+
+        /** [links] searches for Xray server links instead of SOCKS5 endpoints. */
+        fun intent(context: Context, links: Boolean): Intent =
+            Intent(context, ProxyFinderActivity::class.java).putExtra(EXTRA_LINKS, links)
+    }
 }
 
-private class ProxyRow(val result: ProxyProbeResult, var checked: Boolean)
+private class ProxyRow(val result: FinderResult, var checked: Boolean)
 
 private class ProxyAdapter : RecyclerView.Adapter<ProxyAdapter.Holder>() {
     private val rows = mutableListOf<ProxyRow>()
 
     class Holder(val binding: ItemProxyBinding) : RecyclerView.ViewHolder(binding.root)
 
-    fun add(result: ProxyProbeResult, checked: Boolean) {
+    fun add(result: FinderResult, checked: Boolean) {
         val row = ProxyRow(result, checked)
         val position = rows.indexOfFirst { it.result.latencyMs > result.latencyMs }
             .takeIf { it >= 0 } ?: rows.size
@@ -137,7 +161,7 @@ private class ProxyAdapter : RecyclerView.Adapter<ProxyAdapter.Holder>() {
         notifyItemRangeChanged(0, rows.size)
     }
 
-    fun checkedEndpoints(): List<ProxyEndpoint> = rows.filter { it.checked }.map { it.result.endpoint }
+    fun checkedValues(): List<String> = rows.filter { it.checked }.map { it.result.candidate.value }
 
     override fun getItemCount(): Int = rows.size
 
@@ -148,7 +172,7 @@ private class ProxyAdapter : RecyclerView.Adapter<ProxyAdapter.Holder>() {
 
     override fun onBindViewHolder(holder: Holder, position: Int) {
         val row = rows[position]
-        holder.binding.address.text = row.result.endpoint.toString()
+        holder.binding.address.text = row.result.candidate.label
         holder.binding.latency.text = holder.itemView.context
             .getString(R.string.latency_ms, row.result.latencyMs)
         holder.binding.checked.setOnCheckedChangeListener(null)

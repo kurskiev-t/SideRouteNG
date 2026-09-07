@@ -14,7 +14,8 @@
     <string name="notification_running">Tunnel is running</string>
     <string name="vpn_permission_denied">VPN permission denied</string>
     <string name="upstream_required">Add a server link or a SOCKS5 endpoint</string>
-    <string name="find_proxies">Find proxies</string>
+    <string name="find_proxies">Find SOCKS5 proxies</string>
+    <string name="find_links">Find VLESS servers</string>
     <string name="test_upstream">Test upstream</string>
     <string name="test_running">Testing…</string>
     <string name="test_ok">Upstream answered in %1$d ms</string>
@@ -26,6 +27,7 @@
     <string name="select_all">Select all</string>
     <string name="clear_selection">Clear</string>
     <string name="add_to_pool">Add to pool</string>
+    <string name="add_to_links">Add to links</string>
     <string name="nothing_selected">Nothing selected</string>
     <string name="added_to_pool">Added %1$d, pool has %2$d</string>
     <string name="find_progress">Checked %1$d/%2$d, live %3$d</string>

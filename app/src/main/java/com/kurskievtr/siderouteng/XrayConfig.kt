@@ -103,11 +103,18 @@ object XrayConfig {
      * Server addresses are resolved here, by the platform resolver, because a bare core has no
      * resolver of its own on Android and would never reach a server given by domain.
      */
-    fun buildProbe(prefs: TunnelPrefs): String? {
-        val proxy = outbounds(prefs, links(prefs)).firstOrNull() ?: return null
+    fun buildProbe(prefs: TunnelPrefs): String? =
+        probe(outbounds(prefs, links(prefs)).firstOrNull(), prefs.logLevel)
+
+    /** The same one-off probe for a single link that is not in the settings yet. */
+    fun buildProbe(link: String): String? =
+        probe(Outbound.fromLink(link, "${PROXY_PREFIX}1"), "none")
+
+    private fun probe(proxy: JSONObject?, logLevel: String): String? {
+        if (proxy == null) return null
         resolveServers(proxy)
         return JSONObject()
-            .put("log", JSONObject().put("loglevel", prefs.logLevel))
+            .put("log", JSONObject().put("loglevel", logLevel))
             .put("outbounds", JSONArray().put(proxy))
             .toString(2)
     }

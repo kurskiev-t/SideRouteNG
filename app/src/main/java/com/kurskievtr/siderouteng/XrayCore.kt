@@ -26,4 +26,18 @@ object XrayCore {
             .getOrNull()
             ?.takeIf { it > 0 }
     }
+
+    /**
+     * Latency of a single link, in milliseconds, or null when the request did not go through.
+     *
+     * The core dials the server, completes the protocol handshake and fetches [url], so a server
+     * that merely accepts TCP but cannot carry traffic fails here.
+     */
+    fun measureLink(context: Context, link: String, url: String): Long? {
+        val config = XrayConfig.buildProbe(link) ?: return null
+        init(context)
+        return runCatching { Libv2ray.measureOutboundDelay(config, url) }
+            .getOrNull()
+            ?.takeIf { it > 0 }
+    }
 }
