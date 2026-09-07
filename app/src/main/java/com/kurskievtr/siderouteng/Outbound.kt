@@ -36,6 +36,29 @@ object Outbound {
             .put("settings", JSONObject().put("servers", JSONArray().put(server)))
     }
 
+    /**
+     * Domain of the server behind [link], or null when it is an address literal or an unknown
+     * link. The tunnel has to reach these names without going through itself.
+     */
+    fun serverDomain(link: String): String? {
+        val raw = link.trim()
+        val host = when {
+            raw.startsWith("vmess://") ->
+                decodeBase64(raw.removePrefix("vmess://"))
+                    ?.let { runCatching { JSONObject(it).optString("add") }.getOrNull() }
+            raw.startsWith("ss://") -> {
+                var body = raw.removePrefix("ss://").substringBefore('#')
+                if (!body.contains('@')) body = decodeBase64(body).orEmpty()
+                body.substringAfterLast('@').substringBefore('?').substringBeforeLast(':')
+            }
+            else -> runCatching { Uri.parse(raw).host }.getOrNull()
+        }
+        return host?.takeIf { it.isNotEmpty() && !isAddressLiteral(it) }
+    }
+
+    private fun isAddressLiteral(host: String): Boolean =
+        host.contains(':') || host.all { it.isDigit() || it == '.' }
+
     /** Returns null when [link] is not a share link this build understands. */
     fun fromLink(link: String, tag: String): JSONObject? {
         val raw = link.trim()

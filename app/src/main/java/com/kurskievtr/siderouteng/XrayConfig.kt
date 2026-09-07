@@ -15,19 +15,22 @@ object XrayConfig {
     const val TUN_NAME = "srng0"
     const val PROXY_PREFIX = "proxy-"
     private const val BALANCER_TAG = "upstream"
-    private const val PROBE_URL = "https://www.gstatic.com/generate_204"
+    const val PROBE_URL = "https://www.gstatic.com/generate_204"
 
     class Result(val json: String, val outbounds: Int)
 
     fun build(prefs: TunnelPrefs): Result? {
-        val proxies = outbounds(prefs)
+        val links = links(prefs)
+        val proxies = outbounds(prefs, links)
         if (proxies.isEmpty()) return null
+        val serverDomains = if (links.isEmpty()) emptyList()
+        else links.mapNotNull { Outbound.serverDomain(it) }.distinct()
 
         val config = JSONObject()
             .put("log", JSONObject().put("loglevel", prefs.logLevel))
             .put("inbounds", JSONArray().put(tunInbound(prefs)))
             .put("policy", policy())
-            .put("dns", dns(prefs))
+            .put("dns", dns(prefs, serverDomains, overTcp = links.isEmpty()))
 
         val outbounds = JSONArray()
         proxies.forEach { outbounds.put(it) }
@@ -37,8 +40,16 @@ object XrayConfig {
         config.put("outbounds", outbounds)
 
         val rules = JSONArray()
-        // Plain UDP/53 dies on SOCKS5 upstreams without a UDP relay, so DNS is answered by the
-        // core's own resolver, which talks to the resolvers over TCP through the proxy.
+        // The upstream servers themselves must never be routed into the tunnel, otherwise
+        // resolving and dialing them would depend on a connection that does not exist yet.
+        if (serverDomains.isNotEmpty()) {
+            rules.put(
+                JSONObject()
+                    .put("type", "field")
+                    .put("domain", JSONArray(serverDomains.map { "full:$it" }))
+                    .put("outboundTag", "direct")
+            )
+        }
         rules.put(
             JSONObject()
                 .put("type", "field")
@@ -85,11 +96,24 @@ object XrayConfig {
         return Result(config.toString(2), proxies.size)
     }
 
-    private fun outbounds(prefs: TunnelPrefs): List<JSONObject> {
-        val links = prefs.outboundLinks
-            .split('\n')
-            .map(String::trim)
-            .filter { it.isNotEmpty() && !it.startsWith("#") }
+    /** Configuration for a one-off upstream latency probe: outbounds only, no tunnel. */
+    fun buildProbe(prefs: TunnelPrefs): String? {
+        val proxies = outbounds(prefs, links(prefs))
+        if (proxies.isEmpty()) return null
+        val outbounds = JSONArray()
+        proxies.forEach { outbounds.put(it) }
+        return JSONObject()
+            .put("log", JSONObject().put("loglevel", prefs.logLevel))
+            .put("outbounds", outbounds)
+            .toString(2)
+    }
+
+    private fun links(prefs: TunnelPrefs): List<String> = prefs.outboundLinks
+        .split('\n')
+        .map(String::trim)
+        .filter { it.isNotEmpty() && !it.startsWith("#") }
+
+    private fun outbounds(prefs: TunnelPrefs, links: List<String>): List<JSONObject> {
         val fromLinks = links.mapIndexedNotNull { index, link ->
             val outbound = Outbound.fromLink(link, "$PROXY_PREFIX${index + 1}")
             if (outbound == null) AppLog.w("cannot parse server link #${index + 1}")
@@ -121,13 +145,26 @@ object XrayConfig {
                 )
         )
 
-    private fun dns(prefs: TunnelPrefs): JSONObject {
+    /**
+     * [overTcp] is for SOCKS5 upstreams: they have no UDP relay, so plain UDP/53 would be lost.
+     * A real server relays UDP, and asking over UDP is one round trip instead of three.
+     *
+     * The upstream domains are resolved by the system resolver, which is outside the tunnel.
+     */
+    private fun dns(prefs: TunnelPrefs, serverDomains: List<String>, overTcp: Boolean): JSONObject {
         val servers = JSONArray()
+        if (serverDomains.isNotEmpty()) {
+            servers.put(
+                JSONObject()
+                    .put("address", "localhost")
+                    .put("domains", JSONArray(serverDomains.map { "full:$it" }))
+            )
+        }
         prefs.dnsServers
             .split(',', '\n')
             .map(String::trim)
             .filter { it.isNotEmpty() }
-            .forEach { servers.put(if (it.contains("://")) it else "tcp://$it") }
+            .forEach { servers.put(if (it.contains("://") || !overTcp) it else "tcp://$it") }
         return JSONObject()
             .put("servers", servers)
             .put("queryStrategy", "UseIPv4")

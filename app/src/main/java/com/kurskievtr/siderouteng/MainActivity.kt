@@ -75,6 +75,7 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, R.string.saved, Toast.LENGTH_SHORT).show()
             AppLog.i("settings saved")
         }
+        binding.testUpstream.setOnClickListener { testUpstream() }
         binding.control.setOnClickListener { toggleTunnel() }
 
         bindPrefsToUi()
@@ -94,6 +95,29 @@ class MainActivity : AppCompatActivity() {
         AppLog.removeListener(logListener)
         prefs.unregisterOnChange(prefsListener)
         super.onStop()
+    }
+
+    /** Dials the upstream once through a throwaway core, so a dead server is obvious. */
+    private fun testUpstream() {
+        savePrefs()
+        if (!prefs.hasUpstream()) {
+            Toast.makeText(this, R.string.upstream_required, Toast.LENGTH_SHORT).show()
+            return
+        }
+        binding.testUpstream.isEnabled = false
+        binding.testUpstream.setText(R.string.test_running)
+        Thread {
+            val delay = XrayCore.measure(this, prefs)
+            runOnUiThread {
+                if (delay == null) {
+                    AppLog.w(getString(R.string.test_failed))
+                } else {
+                    AppLog.i(getString(R.string.test_ok, delay.toInt()))
+                }
+                binding.testUpstream.setText(R.string.test_upstream)
+                updateControlState()
+            }
+        }.start()
     }
 
     private fun toggleTunnel() {
@@ -149,6 +173,7 @@ class MainActivity : AppCompatActivity() {
         binding.global.isEnabled = editable
         binding.apps.isEnabled = editable && !binding.global.isChecked
         binding.findProxies.isEnabled = editable
+        binding.testUpstream.isEnabled = editable
         binding.save.isEnabled = editable
         binding.control.setText(
             if (prefs.enabled) R.string.control_disable else R.string.control_enable

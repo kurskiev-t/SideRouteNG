@@ -10,7 +10,6 @@ import android.content.pm.PackageManager
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
-import go.Seq
 import libv2ray.CoreCallbackHandler
 import libv2ray.CoreController
 import libv2ray.Libv2ray
@@ -26,18 +25,18 @@ class TunnelService : VpnService() {
     private lateinit var prefs: TunnelPrefs
     private var tun: ParcelFileDescriptor? = null
     private var controller: CoreController? = null
+    private var stopped = false
 
     override fun onCreate() {
         super.onCreate()
         prefs = TunnelPrefs(this)
-        Seq.setContext(applicationContext)
-        Libv2ray.initCoreEnv(filesDir.absolutePath, "")
+        XrayCore.init(this)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startForeground(NOTIFICATION_ID, notification())
         if (intent?.action == ACTION_DISCONNECT) {
-            stop()
+            stop("requested from the UI")
             return START_NOT_STICKY
         }
         if (controller?.isRunning == true) return START_STICKY
@@ -45,26 +44,23 @@ class TunnelService : VpnService() {
     }
 
     override fun onRevoke() {
-        AppLog.w("VPN permission revoked")
-        stop()
+        stop("VPN permission revoked by the system")
     }
 
     override fun onDestroy() {
-        stop()
+        stop("service destroyed")
         super.onDestroy()
     }
 
     private fun start(): Boolean {
         val config = XrayConfig.build(prefs)
         if (config == null) {
-            AppLog.e("no upstream configured")
-            stop()
+            stop("no upstream configured")
             return false
         }
         val descriptor = establish()
         if (descriptor == null) {
-            AppLog.e("cannot establish the tunnel")
-            stop()
+            stop("cannot establish the tunnel")
             return false
         }
         tun = descriptor
@@ -77,13 +73,15 @@ class TunnelService : VpnService() {
             AppLog.i("xray started with ${config.outbounds} outbound(s)")
             true
         } catch (e: Exception) {
-            AppLog.e("xray failed to start: ${e.message}")
-            stop()
+            stop("xray failed to start: ${e.message}")
             false
         }
     }
 
-    private fun stop() {
+    private fun stop(reason: String) {
+        if (stopped) return
+        stopped = true
+        AppLog.i("tunnel stopped: $reason")
         prefs.enabled = false
         try {
             controller?.takeIf { it.isRunning }?.stopLoop()
@@ -163,7 +161,7 @@ class TunnelService : VpnService() {
     private inner class Callback : CoreCallbackHandler {
         override fun startup(): Long = 0
         override fun shutdown(): Long {
-            stop()
+            stop("core requested a shutdown")
             return 0
         }
 
