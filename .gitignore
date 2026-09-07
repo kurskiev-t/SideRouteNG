@@ -1,0 +1,50 @@
+# Gradle
+.gradle/
+build/
+**/build/
+
+# Local SDK / NDK machine config
+local.properties
+
+# Android Studio / IntelliJ
+*.iml
+.idea/caches/
+.idea/libraries/
+.idea/modules.xml
+.idea/workspace.xml
+.idea/navEditor.xml
+.idea/assetWizardSettings.xml
+.idea/deviceManager.xml
+.idea/deploymentTargetSelector.xml
+.idea/misc.xml
+.idea/compiler.xml
+.idea/gradle.xml
+.idea/kotlinc.xml
+.idea/AndroidProjectSystem.xml
+.idea/runConfigurations.xml
+.idea/appInsightsSettings.xml
+.DS_Store
+
+# Native / NDK
+.externalNativeBuild/
+.cxx/
+*.so
+
+# Kotlin
+.kotlin/
+
+# Captures / profiling
+/captures/
+*.hprof
+
+# APK / AAB artifacts (built under app/build anyway)
+*.apk
+*.ap_
+*.aab
+*.dex
+
+# Logs
+*.log
+
+# Downloaded native core (fetched and checksummed by app/build.gradle.kts)
+app/libs/libv2ray.aar
